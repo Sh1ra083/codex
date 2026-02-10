@@ -33,7 +33,11 @@ use uuid::Uuid;
 
 pub struct AgentJobsHandler;
 
-const STATUS_POLL_INTERVAL_MS: u64 = 250;
+const DEFAULT_AGENT_JOB_CONCURRENCY: usize = 64;
+const MAX_AGENT_JOB_CONCURRENCY: usize = 64;
+const STATUS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_secs(1);
+const RUNNING_ITEM_TIMEOUT: Duration = Duration::from_secs(60 * 30);
 
 #[derive(Debug, Deserialize)]
 struct SpawnAgentsOnCsvArgs {
@@ -85,6 +89,12 @@ struct JobRunnerOptions {
     spawn_config: Config,
 }
 
+#[derive(Debug, Clone)]
+struct ActiveJobItem {
+    item_id: String,
+    started_at: Instant,
+}
+
 struct JobProgressEmitter {
     started_at: Instant,
     last_emit_at: Instant,
@@ -95,9 +105,10 @@ struct JobProgressEmitter {
 impl JobProgressEmitter {
     fn new() -> Self {
         let now = Instant::now();
+        let last_emit_at = now.checked_sub(PROGRESS_EMIT_INTERVAL).unwrap_or(now);
         Self {
             started_at: now,
-            last_emit_at: now,
+            last_emit_at,
             last_processed: 0,
             last_failed: 0,
         }
@@ -111,12 +122,11 @@ impl JobProgressEmitter {
         progress: &codex_state::AgentJobProgress,
         force: bool,
     ) -> anyhow::Result<()> {
-        const EMIT_INTERVAL: Duration = Duration::from_secs(1);
         let processed = progress.completed_items + progress.failed_items;
         let should_emit = force
             || processed != self.last_processed
             || progress.failed_items != self.last_failed
-            || self.last_emit_at.elapsed() >= EMIT_INTERVAL;
+            || self.last_emit_at.elapsed() >= PROGRESS_EMIT_INTERVAL;
         if !should_emit {
             return Ok(());
         }
@@ -223,6 +233,7 @@ mod spawn_agents_on_csv {
                 "csv input must include a header row".to_string(),
             ));
         }
+        ensure_unique_headers(headers.as_slice())?;
 
         let id_column_index = args.id_column.as_ref().map_or(Ok(None), |column_name| {
             headers
@@ -252,12 +263,14 @@ mod spawn_agents_on_csv {
                 .and_then(|index| row.get(index).cloned())
                 .filter(|value| !value.trim().is_empty());
             let row_index = idx + 1;
-            let mut item_id = source_id
+            let base_item_id = source_id
                 .clone()
                 .unwrap_or_else(|| format!("row-{row_index}"));
-            if !seen_ids.insert(item_id.clone()) {
-                item_id = format!("{item_id}-{row_index}");
-                seen_ids.insert(item_id.clone());
+            let mut item_id = base_item_id.clone();
+            let mut suffix = 1usize;
+            while !seen_ids.insert(item_id.clone()) {
+                item_id = format!("{base_item_id}-{suffix}");
+                suffix = suffix.saturating_add(1);
             }
 
             let row_object = headers
@@ -467,7 +480,7 @@ async fn run_agent_job_loop(
     job_id: String,
     options: JobRunnerOptions,
 ) -> anyhow::Result<()> {
-    let mut active_items: HashMap<ThreadId, String> = HashMap::new();
+    let mut active_items: HashMap<ThreadId, ActiveJobItem> = HashMap::new();
     let mut progress_emitter = JobProgressEmitter::new();
     recover_running_items(
         session.clone(),
@@ -547,12 +560,28 @@ async fn run_agent_job_loop(
                         .agent_control
                         .shutdown_agent(thread_id)
                         .await;
-                    progressed = true;
                     continue;
                 }
-                active_items.insert(thread_id, item.item_id.clone());
+                active_items.insert(
+                    thread_id,
+                    ActiveJobItem {
+                        item_id: item.item_id.clone(),
+                        started_at: Instant::now(),
+                    },
+                );
                 progressed = true;
             }
+        }
+
+        if reap_stale_active_items(
+            session.clone(),
+            db.clone(),
+            job_id.as_str(),
+            &mut active_items,
+        )
+        .await?
+        {
+            progressed = true;
         }
 
         let finished = find_finished_threads(session.clone(), &active_items).await;
@@ -563,7 +592,7 @@ async fn run_agent_job_loop(
                 break;
             }
             if !progressed {
-                tokio::time::sleep(Duration::from_millis(STATUS_POLL_INTERVAL_MS)).await;
+                tokio::time::sleep(STATUS_POLL_INTERVAL).await;
             }
             continue;
         }
@@ -624,12 +653,19 @@ async fn recover_running_items(
     session: Arc<Session>,
     db: Arc<codex_state::StateRuntime>,
     job_id: &str,
-    active_items: &mut HashMap<ThreadId, String>,
+    active_items: &mut HashMap<ThreadId, ActiveJobItem>,
 ) -> anyhow::Result<()> {
     let running_items = db
         .list_agent_job_items(job_id, Some(codex_state::AgentJobItemStatus::Running), None)
         .await?;
     for item in running_items {
+        if is_item_stale(&item) {
+            let error_message =
+                format!("worker exceeded max runtime of {:?}", RUNNING_ITEM_TIMEOUT);
+            db.mark_agent_job_item_failed(job_id, item.item_id.as_str(), error_message.as_str())
+                .await?;
+            continue;
+        }
         let Some(assigned_thread_id) = item.assigned_thread_id.clone() else {
             db.mark_agent_job_item_failed(
                 job_id,
@@ -662,7 +698,13 @@ async fn recover_running_items(
             )
             .await?;
         } else {
-            active_items.insert(thread_id, item.item_id.clone());
+            active_items.insert(
+                thread_id,
+                ActiveJobItem {
+                    item_id: item.item_id.clone(),
+                    started_at: started_at_from_item(&item),
+                },
+            );
         }
     }
     Ok(())
@@ -670,15 +712,44 @@ async fn recover_running_items(
 
 async fn find_finished_threads(
     session: Arc<Session>,
-    active_items: &HashMap<ThreadId, String>,
+    active_items: &HashMap<ThreadId, ActiveJobItem>,
 ) -> Vec<(ThreadId, String)> {
     let mut finished = Vec::new();
-    for (thread_id, item_id) in active_items {
+    for (thread_id, item) in active_items {
         if is_final(&session.services.agent_control.get_status(*thread_id).await) {
-            finished.push((*thread_id, item_id.clone()));
+            finished.push((*thread_id, item.item_id.clone()));
         }
     }
     finished
+}
+
+async fn reap_stale_active_items(
+    session: Arc<Session>,
+    db: Arc<codex_state::StateRuntime>,
+    job_id: &str,
+    active_items: &mut HashMap<ThreadId, ActiveJobItem>,
+) -> anyhow::Result<bool> {
+    let mut stale = Vec::new();
+    for (thread_id, item) in active_items.iter() {
+        if item.started_at.elapsed() >= RUNNING_ITEM_TIMEOUT {
+            stale.push((*thread_id, item.item_id.clone()));
+        }
+    }
+    if stale.is_empty() {
+        return Ok(false);
+    }
+    for (thread_id, item_id) in stale {
+        let error_message = format!("worker exceeded max runtime of {:?}", RUNNING_ITEM_TIMEOUT);
+        db.mark_agent_job_item_failed(job_id, item_id.as_str(), error_message.as_str())
+            .await?;
+        let _ = session
+            .services
+            .agent_control
+            .shutdown_agent(thread_id)
+            .await;
+        active_items.remove(&thread_id);
+    }
+    Ok(true)
 }
 
 async fn finalize_finished_item(
@@ -783,6 +854,37 @@ fn render_instruction_template(instruction: &str, row_json: &Value) -> String {
     rendered
         .replace(OPEN_BRACE_SENTINEL, "{")
         .replace(CLOSE_BRACE_SENTINEL, "}")
+}
+
+fn ensure_unique_headers(headers: &[String]) -> Result<(), FunctionCallError> {
+    let mut seen = HashSet::new();
+    for header in headers {
+        if !seen.insert(header) {
+            return Err(FunctionCallError::RespondToModel(format!(
+                "csv header {header} is duplicated"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn started_at_from_item(item: &codex_state::AgentJobItem) -> Instant {
+    let now = chrono::Utc::now();
+    let age = now.signed_duration_since(item.updated_at);
+    if let Ok(age) = age.to_std() {
+        Instant::now().checked_sub(age).unwrap_or_else(Instant::now)
+    } else {
+        Instant::now()
+    }
+}
+
+fn is_item_stale(item: &codex_state::AgentJobItem) -> bool {
+    let now = chrono::Utc::now();
+    if let Ok(age) = now.signed_duration_since(item.updated_at).to_std() {
+        age >= RUNNING_ITEM_TIMEOUT
+    } else {
+        false
+    }
 }
 
 fn default_output_csv_path(input_csv_path: &Path, job_id: &str) -> PathBuf {
@@ -998,5 +1100,17 @@ mod tests {
         });
         let rendered = render_instruction_template("Check {path} then {missing}", &row);
         assert_eq!(rendered, "Check src/lib.rs then {missing}");
+    }
+
+    #[test]
+    fn ensure_unique_headers_rejects_duplicates() {
+        let headers = vec!["path".to_string(), "path".to_string()];
+        let Err(err) = ensure_unique_headers(headers.as_slice()) else {
+            panic!("expected duplicate header error");
+        };
+        assert_eq!(
+            err,
+            FunctionCallError::RespondToModel("csv header path is duplicated".to_string())
+        );
     }
 }
