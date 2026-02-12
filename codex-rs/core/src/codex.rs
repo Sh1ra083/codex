@@ -150,6 +150,7 @@ use crate::mcp::effective_mcp_servers;
 use crate::mcp::maybe_prompt_and_install_mcp_dependencies;
 use crate::mcp::with_codex_apps_mcp;
 use crate::mcp_connection_manager::McpConnectionManager;
+use crate::mcp_connection_manager::McpInitializeOptions;
 use crate::mcp_connection_manager::filter_codex_apps_mcp_tools_only;
 use crate::mcp_connection_manager::filter_mcp_tools_by_name;
 use crate::mcp_connection_manager::filter_non_codex_apps_mcp_tools_only;
@@ -1413,7 +1414,12 @@ impl Session {
                 auth_statuses.clone(),
                 tx_event.clone(),
                 cancel_token,
-                sandbox_state,
+                McpInitializeOptions {
+                    mcp_elicitations_enabled: config
+                        .features
+                        .enabled(Feature::ElicitationAppsGateway),
+                    initial_sandbox_state: sandbox_state,
+                },
             )
             .await;
         if !required_mcp_servers.is_empty() {
@@ -3039,7 +3045,12 @@ impl Session {
                 auth_statuses,
                 self.get_tx_event(),
                 cancel_token,
-                sandbox_state,
+                McpInitializeOptions {
+                    mcp_elicitations_enabled: config
+                        .features
+                        .enabled(Feature::ElicitationAppsGateway),
+                    initial_sandbox_state: sandbox_state,
+                },
             )
             .await;
 
@@ -3261,8 +3272,16 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                 server_name,
                 request_id,
                 decision,
+                response_content,
             } => {
-                handlers::resolve_elicitation(&sess, server_name, request_id, decision).await;
+                handlers::resolve_elicitation(
+                    &sess,
+                    server_name,
+                    request_id,
+                    decision,
+                    response_content,
+                )
+                .await;
             }
             Op::Shutdown => {
                 if handlers::shutdown(&sess, sub.id.clone()).await {
@@ -3485,6 +3504,7 @@ mod handlers {
         server_name: String,
         request_id: ProtocolRequestId,
         decision: codex_protocol::approvals::ElicitationAction,
+        response_content: Option<serde_json::Value>,
     ) {
         let action = match decision {
             codex_protocol::approvals::ElicitationAction::Accept => ElicitationAction::Accept,
@@ -3494,7 +3514,7 @@ mod handlers {
         // When accepting, send an empty object as content to satisfy MCP servers
         // that expect non-null content on Accept. For Decline/Cancel, content is None.
         let content = match action {
-            ElicitationAction::Accept => Some(serde_json::json!({})),
+            ElicitationAction::Accept => response_content.or_else(|| Some(serde_json::json!({}))),
             ElicitationAction::Decline | ElicitationAction::Cancel => None,
         };
         let response = ElicitationResponse { action, content };

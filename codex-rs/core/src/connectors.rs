@@ -26,6 +26,7 @@ use crate::mcp::auth::compute_auth_statuses;
 use crate::mcp::with_codex_apps_mcp;
 use crate::mcp_connection_manager::DEFAULT_STARTUP_TIMEOUT;
 use crate::mcp_connection_manager::McpConnectionManager;
+use crate::mcp_connection_manager::McpInitializeOptions;
 use crate::token_data::TokenData;
 
 pub const CONNECTORS_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -110,7 +111,10 @@ pub async fn list_accessible_connectors_from_mcp_tools_with_options(
             auth_status_entries,
             tx_event,
             cancel_token.clone(),
-            sandbox_state,
+            McpInitializeOptions {
+                mcp_elicitations_enabled: config.features.enabled(Feature::ElicitationAppsGateway),
+                initial_sandbox_state: sandbox_state,
+            },
         )
         .await;
 
