@@ -2,6 +2,7 @@ use crate::auth::AuthCredentialsStoreMode;
 use crate::config::edit::ConfigEdit;
 use crate::config::edit::ConfigEditsBuilder;
 use crate::config::types::AppsConfigToml;
+use crate::config::types::CollabInboxDeliveryRole;
 use crate::config::types::DEFAULT_OTEL_ENVIRONMENT;
 use crate::config::types::History;
 use crate::config::types::McpServerConfig;
@@ -310,6 +311,9 @@ pub struct Config {
 
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
+
+    /// How inbound collaboration messages are delivered to non-subagent threads.
+    pub collab_inbox_delivery_role: CollabInboxDeliveryRole,
 
     /// Directory containing all Codex state (defaults to `~/.codex` but can be
     /// overridden by the `CODEX_HOME` environment variable).
@@ -1164,6 +1168,9 @@ pub struct AgentsToml {
     #[schemars(range(min = 1))]
     pub max_threads: Option<usize>,
 
+    /// How inbound collaboration messages are delivered to non-subagent threads.
+    pub inbox_delivery_role: Option<CollabInboxDeliveryRole>,
+
     /// User-defined role declarations keyed by role name.
     ///
     /// Example:
@@ -1628,6 +1635,11 @@ impl Config {
             .as_ref()
             .and_then(|agents| agents.max_threads)
             .or(DEFAULT_AGENT_MAX_THREADS);
+        let collab_inbox_delivery_role = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.inbox_delivery_role)
+            .unwrap_or_default();
         if agent_max_threads == Some(0) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -1858,6 +1870,7 @@ impl Config {
             agent_max_threads,
             agent_roles,
             memories: cfg.memories.unwrap_or_default().into(),
+            collab_inbox_delivery_role,
             codex_home,
             log_dir,
             config_layer_stack,
@@ -4187,6 +4200,7 @@ model_verbosity = "high"
                 agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
                 agent_roles: BTreeMap::new(),
                 memories: MemoriesConfig::default(),
+                collab_inbox_delivery_role: CollabInboxDeliveryRole::Tool,
                 codex_home: fixture.codex_home(),
                 log_dir: fixture.codex_home().join("log"),
                 config_layer_stack: Default::default(),
@@ -4300,6 +4314,7 @@ model_verbosity = "high"
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
+            collab_inbox_delivery_role: CollabInboxDeliveryRole::Tool,
             codex_home: fixture.codex_home(),
             log_dir: fixture.codex_home().join("log"),
             config_layer_stack: Default::default(),
@@ -4411,6 +4426,7 @@ model_verbosity = "high"
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
+            collab_inbox_delivery_role: CollabInboxDeliveryRole::Tool,
             codex_home: fixture.codex_home(),
             log_dir: fixture.codex_home().join("log"),
             config_layer_stack: Default::default(),
@@ -4508,6 +4524,7 @@ model_verbosity = "high"
             agent_max_threads: DEFAULT_AGENT_MAX_THREADS,
             agent_roles: BTreeMap::new(),
             memories: MemoriesConfig::default(),
+            collab_inbox_delivery_role: CollabInboxDeliveryRole::Tool,
             codex_home: fixture.codex_home(),
             log_dir: fixture.codex_home().join("log"),
             config_layer_stack: Default::default(),
@@ -4591,8 +4608,8 @@ model_verbosity = "high"
             ]),
             mcp_servers: None,
             rules: None,
-            enforce_residency: None,
             network: None,
+            enforce_residency: None,
         };
         let requirement_source = crate::config_loader::RequirementSource::Unknown;
         let requirement_source_for_error = requirement_source.clone();
@@ -5140,8 +5157,8 @@ mcp_oauth_callback_port = 5678
             allowed_web_search_modes: None,
             mcp_servers: None,
             rules: None,
-            enforce_residency: None,
             network: None,
+            enforce_residency: None,
         };
 
         let config = ConfigBuilder::default()
