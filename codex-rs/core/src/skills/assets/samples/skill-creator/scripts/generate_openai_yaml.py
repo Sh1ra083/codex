@@ -11,7 +11,9 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
+from yaml_compat import BACKEND
+from yaml_compat import YAMLError
+from yaml_compat import safe_load
 
 ACRONYMS = {
     "GH",
@@ -115,9 +117,15 @@ def read_frontmatter_name(skill_dir):
         return None
     frontmatter_text = match.group(1)
     try:
-        frontmatter = yaml.safe_load(frontmatter_text)
-    except yaml.YAMLError as exc:
+        frontmatter = safe_load(frontmatter_text)
+    except YAMLError as exc:
         print(f"[ERROR] Invalid YAML frontmatter: {exc}")
+        if BACKEND == "shim":
+            print(
+                "[HINT] Frontmatter parser is running in bundled shim mode "
+                "(PyYAML not installed). Install PyYAML for full YAML support: "
+                "python3 -m pip install pyyaml"
+            )
         return None
     if not isinstance(frontmatter, dict):
         print("[ERROR] Frontmatter must be a YAML dictionary.")
@@ -202,6 +210,12 @@ def main():
         help="Interface override in key=value format (repeatable)",
     )
     args = parser.parse_args()
+
+    if BACKEND == "shim":
+        print(
+            "[INFO] Using bundled YAML shim (PyYAML not installed). "
+            "For full YAML support: python3 -m pip install pyyaml"
+        )
 
     skill_dir = Path(args.skill_dir).resolve()
     if not skill_dir.exists():

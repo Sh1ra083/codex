@@ -7,7 +7,9 @@ import re
 import sys
 from pathlib import Path
 
-import yaml
+from yaml_compat import BACKEND
+from yaml_compat import YAMLError
+from yaml_compat import safe_load
 
 MAX_SKILL_NAME_LENGTH = 64
 
@@ -31,10 +33,18 @@ def validate_skill(skill_path):
     frontmatter_text = match.group(1)
 
     try:
-        frontmatter = yaml.safe_load(frontmatter_text)
+        frontmatter = safe_load(frontmatter_text)
         if not isinstance(frontmatter, dict):
             return False, "Frontmatter must be a YAML dictionary"
-    except yaml.YAMLError as e:
+    except YAMLError as e:
+        if BACKEND == "shim":
+            return (
+                False,
+                "Invalid YAML in frontmatter. Running in bundled shim mode "
+                "(PyYAML missing). Install PyYAML for full YAML support: "
+                "python3 -m pip install pyyaml. "
+                f"Parser error: {e}",
+            )
         return False, f"Invalid YAML in frontmatter: {e}"
 
     allowed_properties = {"name", "description", "license", "allowed-tools", "metadata"}
@@ -95,6 +105,12 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python quick_validate.py <skill_directory>")
         sys.exit(1)
+
+    if BACKEND == "shim":
+        print(
+            "[INFO] Using bundled YAML shim (PyYAML not installed). "
+            "For full YAML support: python3 -m pip install pyyaml"
+        )
 
     valid, message = validate_skill(sys.argv[1])
     print(message)
