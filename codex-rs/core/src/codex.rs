@@ -7160,11 +7160,19 @@ mod tests {
     }
 
     async fn build_test_config(codex_home: &Path) -> Config {
-        ConfigBuilder::default()
-            .codex_home(codex_home.to_path_buf())
-            .build()
-            .await
-            .expect("load default test config")
+        let mut builder = ConfigBuilder::default().codex_home(codex_home.to_path_buf());
+        #[cfg(target_os = "linux")]
+        {
+            builder = builder.harness_overrides(crate::config::ConfigOverrides {
+                codex_linux_sandbox_exe: Some(
+                    codex_utils_cargo_bin::cargo_bin("codex-linux-sandbox")
+                        .expect("should find binary for codex-linux-sandbox"),
+                ),
+                ..crate::config::ConfigOverrides::default()
+            });
+        }
+
+        builder.build().await.expect("load default test config")
     }
 
     fn otel_manager(

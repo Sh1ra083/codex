@@ -1572,24 +1572,6 @@ mod tests {
         assert_eq!(outcome, "cancelled");
     }
 
-    async fn can_run_js_repl_runtime_tests() -> bool {
-        if std::env::var_os("CODEX_SANDBOX").is_some() {
-            return false;
-        }
-        let Some(node_path) = resolve_node(None) else {
-            return false;
-        };
-        let required = match required_node_version() {
-            Ok(v) => v,
-            Err(_) => return false,
-        };
-        let found = match read_node_version(&node_path).await {
-            Ok(v) => v,
-            Err(_) => return false,
-        };
-        found >= required
-    }
-
     fn write_js_repl_test_package(base: &Path, name: &str, value: &str) -> anyhow::Result<()> {
         let pkg_dir = base.join("node_modules").join(name);
         fs::create_dir_all(&pkg_dir)?;
@@ -1608,10 +1590,6 @@ mod tests {
 
     #[tokio::test]
     async fn js_repl_persists_top_level_bindings_and_supports_tla() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -1649,10 +1627,6 @@ mod tests {
 
     #[tokio::test]
     async fn js_repl_timeout_does_not_deadlock() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -1684,10 +1658,6 @@ mod tests {
 
     #[tokio::test]
     async fn js_repl_timeout_kills_kernel_process() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -1743,10 +1713,6 @@ mod tests {
 
     #[tokio::test]
     async fn js_repl_kernel_failure_includes_model_diagnostics() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -1795,10 +1761,6 @@ mod tests {
 
     #[tokio::test]
     async fn js_repl_can_call_tools() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, mut turn) = make_session_and_context().await;
         turn.approval_policy = AskForApproval::Never;
         turn.sandbox_policy = SandboxPolicy::DangerFullAccess;
@@ -1838,10 +1800,6 @@ mod tests {
 
     #[tokio::test]
     async fn js_repl_tool_call_rejects_recursive_js_repl_invocation() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, mut turn) = make_session_and_context().await;
         turn.approval_policy = AskForApproval::Never;
         turn.sandbox_policy = SandboxPolicy::DangerFullAccess;
@@ -1886,10 +1844,6 @@ try {
 
     #[tokio::test]
     async fn js_repl_waits_for_unawaited_tool_calls_before_completion() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await || cfg!(windows) {
-            return Ok(());
-        }
-
         let (session, mut turn) = make_session_and_context().await;
         turn.approval_policy = AskForApproval::Never;
         turn.sandbox_policy = SandboxPolicy::DangerFullAccess;
@@ -1929,10 +1883,6 @@ console.log("cell-complete");
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn js_repl_can_attach_image_via_view_image_tool() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, mut turn) = make_session_and_context().await;
         if !turn
             .model_info
@@ -1997,10 +1947,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_does_not_expose_process_global() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -2024,10 +1970,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_blocks_sensitive_builtin_imports() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
@@ -2055,10 +1997,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_prefers_env_node_module_dirs_over_config() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let env_base = tempdir()?;
         write_js_repl_test_package(env_base.path(), "repl_probe", "env")?;
 
@@ -2099,10 +2037,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_resolves_from_first_config_dir() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let first_base = tempdir()?;
         let second_base = tempdir()?;
         write_js_repl_test_package(first_base.path(), "repl_probe", "first")?;
@@ -2146,10 +2080,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_falls_back_to_cwd_node_modules() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let config_base = tempdir()?;
         let cwd_dir = tempdir()?;
         write_js_repl_test_package(cwd_dir.path(), "repl_probe", "cwd")?;
@@ -2187,10 +2117,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_accepts_node_modules_dir_entries() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let base_dir = tempdir()?;
         let cwd_dir = tempdir()?;
         write_js_repl_test_package(base_dir.path(), "repl_probe", "normalized")?;
@@ -2228,10 +2154,6 @@ console.log(out.output?.body?.text ?? "");
 
     #[tokio::test]
     async fn js_repl_rejects_path_specifiers() -> anyhow::Result<()> {
-        if !can_run_js_repl_runtime_tests().await {
-            return Ok(());
-        }
-
         let (session, turn) = make_session_and_context().await;
         let session = Arc::new(session);
         let turn = Arc::new(turn);
