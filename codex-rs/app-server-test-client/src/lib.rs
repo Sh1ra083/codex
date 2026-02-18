@@ -31,6 +31,7 @@ use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::DynamicToolSpec;
+use codex_app_server_protocol::ExecPolicyAmendment;
 use codex_app_server_protocol::FileChangeApprovalDecision;
 use codex_app_server_protocol::FileChangeRequestApprovalParams;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
@@ -1427,7 +1428,7 @@ impl CodexClient {
             println!("< proposed execpolicy amendment: {execpolicy_amendment:?}");
         }
 
-        let decision = self.command_approval_decision()?;
+        let decision = self.command_approval_decision(proposed_execpolicy_amendment)?;
         let response = CommandExecutionRequestApprovalResponse { decision };
         self.send_server_request_response(request_id, &response)?;
         println!(
@@ -1470,7 +1471,14 @@ impl CodexClient {
         Ok(())
     }
 
-    fn command_approval_decision(&self) -> Result<CommandExecutionApprovalDecision> {
+    fn command_approval_decision(
+        &self,
+        proposed_execpolicy_amendment: Option<ExecPolicyAmendment>,
+    ) -> Result<CommandExecutionApprovalDecision> {
+        if let Some(execpolicy_amendment) = proposed_execpolicy_amendment {
+            return prompt_for_command_approval_with_amendment(execpolicy_amendment);
+        }
+
         if prompt_for_yes_no("Approve command execution request? [y/n] ")? {
             Ok(CommandExecutionApprovalDecision::Accept)
         } else {
@@ -1579,6 +1587,37 @@ fn prompt_for_yes_no(prompt: &str) -> Result<bool> {
             return Ok(false);
         }
         println!("please answer y or n");
+    }
+}
+
+fn prompt_for_command_approval_with_amendment(
+    execpolicy_amendment: ExecPolicyAmendment,
+) -> Result<CommandExecutionApprovalDecision> {
+    loop {
+        print!("Approve command execution request? [y/n/a] (a=always allow) ");
+        io::stdout()
+            .flush()
+            .context("failed to flush approval prompt")?;
+
+        let mut line = String::new();
+        io::stdin()
+            .read_line(&mut line)
+            .context("failed to read approval input")?;
+        let input = line.trim().to_ascii_lowercase();
+        if matches!(input.as_str(), "y" | "yes") {
+            return Ok(CommandExecutionApprovalDecision::Accept);
+        }
+        if matches!(input.as_str(), "n" | "no") {
+            return Ok(CommandExecutionApprovalDecision::Decline);
+        }
+        if matches!(input.as_str(), "a" | "always" | "always allow") {
+            return Ok(
+                CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
+                    execpolicy_amendment: execpolicy_amendment.clone(),
+                },
+            );
+        }
+        println!("please answer y, n, or a");
     }
 }
 
