@@ -1045,6 +1045,21 @@ pub enum EventMsg {
     CollabResumeBegin(CollabResumeBeginEvent),
     /// Collab interaction: resume end.
     CollabResumeEnd(CollabResumeEndEvent),
+
+    /// Agent Teams: a new team has been created.
+    TeamCreated(TeamCreatedEvent),
+    /// Agent Teams: a member was added to the team.
+    TeamMemberAdded(TeamMemberEvent),
+    /// Agent Teams: a member was removed from the team.
+    TeamMemberRemoved(TeamMemberEvent),
+    /// Agent Teams: a task was created.
+    TeamTaskCreated(TeamTaskEvent),
+    /// Agent Teams: a task status was updated.
+    TeamTaskUpdated(TeamTaskEvent),
+    /// Agent Teams: a message was sent between teammates.
+    TeamMessageSent(TeamMessageEvent),
+    /// Agent Teams: the team was cleaned up.
+    TeamCleanup(TeamCleanupEvent),
 }
 
 impl From<CollabAgentSpawnBeginEvent> for EventMsg {
@@ -1104,6 +1119,36 @@ impl From<CollabResumeBeginEvent> for EventMsg {
 impl From<CollabResumeEndEvent> for EventMsg {
     fn from(event: CollabResumeEndEvent) -> Self {
         EventMsg::CollabResumeEnd(event)
+    }
+}
+
+impl From<TeamCreatedEvent> for EventMsg {
+    fn from(event: TeamCreatedEvent) -> Self {
+        EventMsg::TeamCreated(event)
+    }
+}
+
+impl From<TeamMemberEvent> for EventMsg {
+    fn from(event: TeamMemberEvent) -> Self {
+        EventMsg::TeamMemberAdded(event)
+    }
+}
+
+impl From<TeamTaskEvent> for EventMsg {
+    fn from(event: TeamTaskEvent) -> Self {
+        EventMsg::TeamTaskCreated(event)
+    }
+}
+
+impl From<TeamMessageEvent> for EventMsg {
+    fn from(event: TeamMessageEvent) -> Self {
+        EventMsg::TeamMessageSent(event)
+    }
+}
+
+impl From<TeamCleanupEvent> for EventMsg {
+    fn from(event: TeamCleanupEvent) -> Self {
+        EventMsg::TeamCleanup(event)
     }
 }
 
@@ -2788,6 +2833,103 @@ pub struct CollabResumeEndEvent {
     /// Last known status of the receiver agent reported to the sender agent after
     /// resume.
     pub status: AgentStatus,
+}
+
+// ────────────────────────────── Agent Teams ──────────────────────────────
+
+/// Status of a task in the shared task list.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum TeamTaskStatus {
+    /// Task is waiting to be accepted.
+    Pending,
+    /// Task is currently being worked on.
+    InProgress,
+    /// Task has been completed.
+    Completed,
+}
+
+/// Information about a team member.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamMemberInfo {
+    /// Human-readable name of the teammate (e.g. "security-reviewer").
+    pub name: String,
+    /// Thread ID of the teammate's session.
+    pub thread_id: ThreadId,
+    /// Assigned role or focus area.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub role: Option<String>,
+    /// Current status of the agent.
+    pub status: AgentStatus,
+}
+
+/// Emitted when a new agent team is created.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamCreatedEvent {
+    /// Unique name identifying this team.
+    pub team_name: String,
+    /// Thread ID of the team leader.
+    pub leader_thread_id: ThreadId,
+}
+
+/// Emitted when a member is added to or removed from a team.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamMemberEvent {
+    /// Name of the team.
+    pub team_name: String,
+    /// Information about the member.
+    pub member: TeamMemberInfo,
+}
+
+/// A single task in the shared task list.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamTaskInfo {
+    /// Unique task identifier.
+    pub id: String,
+    /// Short description of the task.
+    pub title: String,
+    /// Current status.
+    pub status: TeamTaskStatus,
+    /// Name of the teammate assigned to this task, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub assigned_to: Option<String>,
+    /// Task IDs that must be completed before this task can be accepted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub depends_on: Vec<String>,
+}
+
+/// Emitted when a task is created or its status changes.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamTaskEvent {
+    /// Name of the team.
+    pub team_name: String,
+    /// The task that was created or updated.
+    pub task: TeamTaskInfo,
+}
+
+/// Emitted when a message is sent between teammates.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamMessageEvent {
+    /// Name of the team.
+    pub team_name: String,
+    /// Name of the sender.
+    pub from: String,
+    /// Name of the recipient, or "all" for broadcasts.
+    pub to: String,
+    /// Message content.
+    pub content: String,
+}
+
+/// Emitted when the team is cleaned up and resources released.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+pub struct TeamCleanupEvent {
+    /// Name of the team being cleaned up.
+    pub team_name: String,
+    /// Thread ID of the leader that initiated cleanup.
+    pub leader_thread_id: ThreadId,
 }
 
 #[cfg(test)]

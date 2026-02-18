@@ -135,6 +135,7 @@ pub use rollout::session_index::find_thread_names_by_ids;
 mod function_tool;
 mod state;
 mod tasks;
+pub mod teams;
 mod user_shell_command;
 pub mod util;
 pub use codex_shell_command::bash;

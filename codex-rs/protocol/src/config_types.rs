@@ -3,6 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use strum_macros::Display;
 use strum_macros::EnumIter;
+use strum_macros::EnumString;
 use ts_rs::TS;
 
 use crate::openai_models::ReasoningEffort;
@@ -301,6 +302,23 @@ pub struct CollaborationModeMask {
     pub model: Option<String>,
     pub reasoning_effort: Option<Option<ReasoningEffort>>,
     pub developer_instructions: Option<Option<String>>,
+}
+
+/// Controls how teammates are displayed in the TUI.
+#[derive(
+    Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq, Display, EnumString,
+    JsonSchema, TS,
+)]
+#[serde(rename_all = "kebab-case")]
+#[strum(serialize_all = "kebab-case")]
+pub enum TeammateMode {
+    /// Auto-detect: use split panes if already in tmux, else in-process.
+    #[default]
+    Auto,
+    /// All teammates run inside the leader's terminal.
+    InProcess,
+    /// Each teammate gets its own pane (requires tmux or similar).
+    Split,
 }
 
 #[cfg(test)]

@@ -801,7 +801,14 @@ impl EventProcessor for EventProcessorWithHumanOutput {
             | EventMsg::RequestUserInput(_)
             | EventMsg::CollabResumeBegin(_)
             | EventMsg::CollabResumeEnd(_)
-            | EventMsg::DynamicToolCallRequest(_) => {}
+            | EventMsg::DynamicToolCallRequest(_)
+            | EventMsg::TeamCreated(_)
+            | EventMsg::TeamMemberAdded(_)
+            | EventMsg::TeamMemberRemoved(_)
+            | EventMsg::TeamTaskCreated(_)
+            | EventMsg::TeamTaskUpdated(_)
+            | EventMsg::TeamMessageSent(_)
+            | EventMsg::TeamCleanup(_) => {}
         }
         CodexStatus::Running
     }

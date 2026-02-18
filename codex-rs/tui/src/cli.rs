@@ -110,6 +110,26 @@ pub struct Cli {
     #[arg(long = "no-alt-screen", default_value_t = false)]
     pub no_alt_screen: bool,
 
+    /// Start (or resume) a named agent team session.
+    ///
+    /// When specified, the leader agent gains access to team-management tools
+    /// (`create_team`, `spawn_teammate`, etc.) and the team name is pre-populated.
+    #[arg(long = "team", value_name = "NAME")]
+    pub team: Option<String>,
+
+    /// Controls how teammate agents are displayed.
+    ///
+    /// `auto` (default): use split panes when running inside tmux, otherwise in-process.
+    /// `in-process`: all teammates share the leader's terminal.
+    /// `split`: each teammate gets its own pane (requires tmux or similar).
+    #[arg(long = "teammate-mode", value_name = "MODE")]
+    pub teammate_mode: Option<codex_protocol::config_types::TeammateMode>,
+
+    /// Enable delegation mode: the leader only coordinates (no shell/write tools)
+    /// while teammates perform all implementation work.
+    #[arg(long = "delegation-mode", default_value_t = false)]
+    pub delegation_mode: bool,
+
     #[clap(skip)]
     pub config_overrides: CliConfigOverrides,
 }

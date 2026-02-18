@@ -760,6 +760,406 @@ fn create_close_agent_tool() -> ToolSpec {
     })
 }
 
+// ═══════════════════════════ Agent Teams Tools ═══════════════════════════
+
+// --- Leader tools ---
+
+pub(crate) fn create_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "name".to_string(),
+            JsonSchema::String {
+                description: Some("Unique name for the team (e.g. 'refactor-auth').".to_string()),
+            },
+        ),
+        (
+            "description".to_string(),
+            JsonSchema::String {
+                description: Some("Short description of the team's goal.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "create_team".to_string(),
+        description:
+            "Create a new agent team. You become the leader. Returns the team name and config path."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_spawn_teammate_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team (from create_team).".to_string()),
+            },
+        ),
+        (
+            "name".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Human-readable name for the teammate (e.g. 'security-reviewer').".to_string(),
+                ),
+            },
+        ),
+        (
+            "role".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Focus area or role description for the teammate.".to_string(),
+                ),
+            },
+        ),
+        (
+            "prompt".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Initial prompt describing the teammate's task. This is sent as the first message to the spawned agent."
+                        .to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "spawn_teammate".to_string(),
+        description:
+            "Spawn a new teammate agent in the team. The teammate gets its own context, inbox, and can accept tasks."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec![
+                "team_name".to_string(),
+                "name".to_string(),
+                "prompt".to_string(),
+            ]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_assign_task_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team.".to_string()),
+            },
+        ),
+        (
+            "title".to_string(),
+            JsonSchema::String {
+                description: Some("Short description of the task.".to_string()),
+            },
+        ),
+        (
+            "assigned_to".to_string(),
+            JsonSchema::String {
+                description: Some(
+                    "Teammate name to assign the task to. Leave empty for unassigned.".to_string(),
+                ),
+            },
+        ),
+        (
+            "depends_on".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Task IDs that must be completed before this task can start.".to_string(),
+                ),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "assign_task".to_string(),
+        description: "Create a new task in the shared task list, optionally assigned to a specific teammate."
+            .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string(), "title".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_send_team_message_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team.".to_string()),
+            },
+        ),
+        (
+            "to".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the recipient teammate.".to_string()),
+            },
+        ),
+        (
+            "content".to_string(),
+            JsonSchema::String {
+                description: Some("Message content.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "send_team_message".to_string(),
+        description: "Send a message to a specific teammate's inbox.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec![
+                "team_name".to_string(),
+                "to".to_string(),
+                "content".to_string(),
+            ]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_broadcast_team_message_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team.".to_string()),
+            },
+        ),
+        (
+            "content".to_string(),
+            JsonSchema::String {
+                description: Some("Message to broadcast to all teammates.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "broadcast_team_message".to_string(),
+        description: "Send a message to all teammates' inboxes.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string(), "content".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_wait_for_teammates_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team.".to_string()),
+            },
+        ),
+        (
+            "names".to_string(),
+            JsonSchema::Array {
+                items: Box::new(JsonSchema::String { description: None }),
+                description: Some(
+                    "Teammate names to wait for. Empty array waits for all.".to_string(),
+                ),
+            },
+        ),
+        (
+            "timeout_ms".to_string(),
+            JsonSchema::Number {
+                description: Some("Timeout in milliseconds. Defaults to 60000.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "wait_for_teammates".to_string(),
+        description: "Wait for specified teammates to complete their current tasks.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_get_task_status_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_name".to_string(),
+        JsonSchema::String {
+            description: Some("Name of the team.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "get_task_status".to_string(),
+        description: "Get the status of all tasks in the team's shared task list.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_shutdown_teammate_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team.".to_string()),
+            },
+        ),
+        (
+            "name".to_string(),
+            JsonSchema::String {
+                description: Some("Teammate name to shut down.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "shutdown_teammate".to_string(),
+        description: "Shut down a specific teammate and release their resources.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string(), "name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_cleanup_team_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_name".to_string(),
+        JsonSchema::String {
+            description: Some("Name of the team to clean up.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "cleanup_team".to_string(),
+        description:
+            "Clean up all team resources: shut down all teammates, remove config, inboxes, and task list."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+// --- Teammate tools ---
+
+pub(crate) fn create_accept_task_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_name".to_string(),
+        JsonSchema::String {
+            description: Some("Name of the team.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "accept_task".to_string(),
+        description:
+            "Accept the next available (pending, unblocked) task from the shared task list."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_complete_task_tool() -> ToolSpec {
+    let properties = BTreeMap::from([
+        (
+            "team_name".to_string(),
+            JsonSchema::String {
+                description: Some("Name of the team.".to_string()),
+            },
+        ),
+        (
+            "task_id".to_string(),
+            JsonSchema::String {
+                description: Some("ID of the task to mark as completed.".to_string()),
+            },
+        ),
+    ]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "complete_task".to_string(),
+        description: "Mark a task as completed in the shared task list.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string(), "task_id".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_get_tasks_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_name".to_string(),
+        JsonSchema::String {
+            description: Some("Name of the team.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "get_tasks".to_string(),
+        description: "Get the list of all tasks in the team's shared task list.".to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
+pub(crate) fn create_request_shutdown_tool() -> ToolSpec {
+    let properties = BTreeMap::from([(
+        "team_name".to_string(),
+        JsonSchema::String {
+            description: Some("Name of the team.".to_string()),
+        },
+    )]);
+
+    ToolSpec::Function(ResponsesApiTool {
+        name: "request_shutdown".to_string(),
+        description:
+            "Request to be shut down. Sends a message to the leader that this teammate has finished."
+                .to_string(),
+        strict: false,
+        parameters: JsonSchema::Object {
+            properties,
+            required: Some(vec!["team_name".to_string()]),
+            additional_properties: Some(false.into()),
+        },
+    })
+}
+
 fn create_test_sync_tool() -> ToolSpec {
     let barrier_properties = BTreeMap::from([
         (
@@ -1410,6 +1810,7 @@ pub(crate) fn build_specs(
     use crate::tools::handlers::McpHandler;
     use crate::tools::handlers::McpResourceHandler;
     use crate::tools::handlers::MultiAgentHandler;
+    use crate::tools::handlers::TeamHandler;
     use crate::tools::handlers::PlanHandler;
     use crate::tools::handlers::ReadFileHandler;
     use crate::tools::handlers::RequestUserInputHandler;
@@ -1575,6 +1976,37 @@ pub(crate) fn build_specs(
         builder.register_handler("resume_agent", multi_agent_handler.clone());
         builder.register_handler("wait", multi_agent_handler.clone());
         builder.register_handler("close_agent", multi_agent_handler);
+
+        // Agent Teams tools — leader tools
+        let team_handler = Arc::new(TeamHandler);
+        builder.push_spec(create_team_tool());
+        builder.push_spec(create_spawn_teammate_tool());
+        builder.push_spec(create_assign_task_tool());
+        builder.push_spec(create_send_team_message_tool());
+        builder.push_spec(create_broadcast_team_message_tool());
+        builder.push_spec(create_wait_for_teammates_tool());
+        builder.push_spec(create_get_task_status_tool());
+        builder.push_spec(create_shutdown_teammate_tool());
+        builder.push_spec(create_cleanup_team_tool());
+        builder.register_handler("create_team", team_handler.clone());
+        builder.register_handler("spawn_teammate", team_handler.clone());
+        builder.register_handler("assign_task", team_handler.clone());
+        builder.register_handler("send_team_message", team_handler.clone());
+        builder.register_handler("broadcast_team_message", team_handler.clone());
+        builder.register_handler("wait_for_teammates", team_handler.clone());
+        builder.register_handler("get_task_status", team_handler.clone());
+        builder.register_handler("shutdown_teammate", team_handler.clone());
+        builder.register_handler("cleanup_team", team_handler.clone());
+
+        // Agent Teams tools — teammate tools
+        builder.push_spec(create_accept_task_tool());
+        builder.push_spec(create_complete_task_tool());
+        builder.push_spec(create_get_tasks_tool());
+        builder.push_spec(create_request_shutdown_tool());
+        builder.register_handler("accept_task", team_handler.clone());
+        builder.register_handler("complete_task", team_handler.clone());
+        builder.register_handler("get_tasks", team_handler.clone());
+        builder.register_handler("request_shutdown", team_handler);
     }
 
     if let Some(mcp_tools) = mcp_tools {

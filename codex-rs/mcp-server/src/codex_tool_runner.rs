@@ -374,7 +374,14 @@ async fn run_codex_tool_session_inner(
                     | EventMsg::CollabCloseEnd(_)
                     | EventMsg::CollabResumeBegin(_)
                     | EventMsg::CollabResumeEnd(_)
-                    | EventMsg::DeprecationNotice(_) => {
+                    | EventMsg::DeprecationNotice(_)
+                    | EventMsg::TeamCreated(_)
+                    | EventMsg::TeamMemberAdded(_)
+                    | EventMsg::TeamMemberRemoved(_)
+                    | EventMsg::TeamTaskCreated(_)
+                    | EventMsg::TeamTaskUpdated(_)
+                    | EventMsg::TeamMessageSent(_)
+                    | EventMsg::TeamCleanup(_) => {
                         // For now, we do not do anything extra for these
                         // events. Note that
                         // send(codex_event_to_notification(&event)) above has

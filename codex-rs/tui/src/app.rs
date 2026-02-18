@@ -580,6 +580,15 @@ pub(crate) struct App {
     primary_thread_id: Option<ThreadId>,
     primary_session_configured: Option<SessionConfiguredEvent>,
     pending_primary_events: VecDeque<Event>,
+
+    /// Team name from `--team` CLI flag. When set, the leader agent
+    /// automatically has access to team-management tools.
+    team_name: Option<String>,
+    /// Display mode for teammates (in-process vs split panes).
+    teammate_mode: Option<codex_protocol::config_types::TeammateMode>,
+    /// When true the leader only coordinates; shell/write tools are
+    /// disabled and all implementation work is delegated to teammates.
+    delegation_mode: bool,
 }
 
 #[derive(Default)]
@@ -1013,6 +1022,9 @@ impl App {
         feedback: codex_feedback::CodexFeedback,
         is_first_run: bool,
         should_prompt_windows_sandbox_nux_at_startup: bool,
+        team_name: Option<String>,
+        teammate_mode: Option<codex_protocol::config_types::TeammateMode>,
+        delegation_mode: bool,
     ) -> Result<AppExitInfo> {
         use tokio_stream::StreamExt;
         let (app_event_tx, mut app_event_rx) = unbounded_channel();
@@ -1219,6 +1231,9 @@ impl App {
             primary_thread_id: None,
             primary_session_configured: None,
             pending_primary_events: VecDeque::new(),
+            team_name,
+            teammate_mode,
+            delegation_mode,
         };
 
         // On startup, if Agent mode (workspace-write) or ReadOnly is active, warn about world-writable dirs on Windows.
@@ -2795,6 +2810,45 @@ impl App {
                 self.overlay = Some(Overlay::new_transcript(self.transcript_cells.clone()));
                 tui.frame_requester().schedule_frame();
             }
+            // Ctrl+K – team task list overlay
+            KeyEvent {
+                code: KeyCode::Char('k'),
+                modifiers: crossterm::event::KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                ..
+            } if self.chat_widget.team_state().is_active() => {
+                let lines = self.chat_widget.team_state().task_overlay_lines();
+                let _ = tui.enter_alt_screen();
+                self.overlay = Some(Overlay::new_static_with_lines(
+                    lines,
+                    "T E A M   T A S K S".to_string(),
+                ));
+                tui.frame_requester().schedule_frame();
+            }
+            // Shift+Down – switch to next teammate thread
+            KeyEvent {
+                code: KeyCode::Down,
+                modifiers: crossterm::event::KeyModifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                ..
+            } if self.chat_widget.team_state().is_active() => {
+                let ids = self.chat_widget.team_state().teammate_thread_ids();
+                if let Some(next) = self.next_teammate_thread(&ids, true) {
+                    let _ = self.select_agent_thread(tui, next).await;
+                }
+            }
+            // Shift+Up – switch to previous teammate thread
+            KeyEvent {
+                code: KeyCode::Up,
+                modifiers: crossterm::event::KeyModifiers::SHIFT,
+                kind: KeyEventKind::Press,
+                ..
+            } if self.chat_widget.team_state().is_active() => {
+                let ids = self.chat_widget.team_state().teammate_thread_ids();
+                if let Some(prev) = self.next_teammate_thread(&ids, false) {
+                    let _ = self.select_agent_thread(tui, prev).await;
+                }
+            }
             KeyEvent {
                 code: KeyCode::Char('g'),
                 modifiers: crossterm::event::KeyModifiers::CONTROL,
@@ -2860,6 +2914,27 @@ impl App {
 
     fn refresh_status_line(&mut self) {
         self.chat_widget.refresh_status_line();
+    }
+
+    /// Cycle through teammate thread IDs.  `forward` = true means next,
+    /// false means previous.  Returns the target thread ID or None.
+    fn next_teammate_thread(&self, ids: &[ThreadId], forward: bool) -> Option<ThreadId> {
+        if ids.is_empty() {
+            return None;
+        }
+        let current = self.active_thread_id?;
+        let pos = ids.iter().position(|id| *id == current);
+        let idx = match pos {
+            Some(i) => {
+                if forward {
+                    (i + 1) % ids.len()
+                } else {
+                    (i + ids.len() - 1) % ids.len()
+                }
+            }
+            None => 0,
+        };
+        Some(ids[idx])
     }
 
     #[cfg(target_os = "windows")]

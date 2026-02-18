@@ -87,6 +87,7 @@ mod markdown_stream;
 mod mention_codec;
 mod model_migration;
 mod multi_agents;
+mod team_events;
 mod notifications;
 pub mod onboarding;
 mod oss_selection;
@@ -716,6 +717,9 @@ async fn run_ratatui_app(
         prompt,
         images,
         no_alt_screen,
+        team,
+        teammate_mode,
+        delegation_mode,
         ..
     } = cli;
 
@@ -735,6 +739,9 @@ async fn run_ratatui_app(
         feedback,
         should_show_trust_screen, // Proxy to: is it a first run in this directory?
         should_prompt_windows_sandbox_nux_at_startup,
+        team,
+        teammate_mode,
+        delegation_mode,
     )
     .await;
 

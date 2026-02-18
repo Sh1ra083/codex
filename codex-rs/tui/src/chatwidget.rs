@@ -186,6 +186,7 @@ use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::clipboard_paste::paste_image_to_temp_png;
 use crate::collaboration_modes;
 use crate::diff_render::display_path_for;
+use crate::team_events;
 use crate::exec_cell::CommandOutput;
 use crate::exec_cell::ExecCell;
 use crate::exec_cell::new_active_exec_command;
@@ -623,6 +624,8 @@ pub(crate) struct ChatWidget {
     // True once we've attempted a branch lookup for the current CWD.
     status_line_branch_lookup_complete: bool,
     external_editor_state: ExternalEditorState,
+    /// Accumulated team state from Team* events.
+    team_state: team_events::TeamState,
 }
 
 /// Snapshot of active-cell state that affects transcript overlay rendering.
@@ -2686,6 +2689,7 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            team_state: team_events::TeamState::default(),
             external_editor_state: ExternalEditorState::Closed,
         };
 
@@ -2849,6 +2853,7 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            team_state: team_events::TeamState::default(),
             external_editor_state: ExternalEditorState::Closed,
         };
 
@@ -3001,6 +3006,7 @@ impl ChatWidget {
             status_line_branch_cwd: None,
             status_line_branch_pending: false,
             status_line_branch_lookup_complete: false,
+            team_state: team_events::TeamState::default(),
             external_editor_state: ExternalEditorState::Closed,
         };
 
@@ -4116,6 +4122,34 @@ impl ChatWidget {
             EventMsg::CollabCloseEnd(ev) => self.on_collab_event(multi_agents::close_end(ev)),
             EventMsg::CollabResumeBegin(ev) => self.on_collab_event(multi_agents::resume_begin(ev)),
             EventMsg::CollabResumeEnd(ev) => self.on_collab_event(multi_agents::resume_end(ev)),
+            // Agent Teams events – update state tracker, then render as info cells.
+            EventMsg::TeamCreated(ev) => {
+                self.team_state.on_team_created(&ev);
+                self.on_collab_event(team_events::team_created(ev))
+            }
+            EventMsg::TeamMemberAdded(ev) => {
+                self.team_state.on_member_added(&ev);
+                self.on_collab_event(team_events::team_member_added(ev))
+            }
+            EventMsg::TeamMemberRemoved(ev) => {
+                self.team_state.on_member_removed(&ev);
+                self.on_collab_event(team_events::team_member_removed(ev))
+            }
+            EventMsg::TeamTaskCreated(ev) => {
+                self.team_state.on_task_created(&ev);
+                self.on_collab_event(team_events::team_task_created(ev))
+            }
+            EventMsg::TeamTaskUpdated(ev) => {
+                self.team_state.on_task_updated(&ev);
+                self.on_collab_event(team_events::team_task_updated(ev))
+            }
+            EventMsg::TeamMessageSent(ev) => {
+                self.on_collab_event(team_events::team_message_sent(ev))
+            }
+            EventMsg::TeamCleanup(ev) => {
+                self.team_state.on_cleanup();
+                self.on_collab_event(team_events::team_cleanup(ev))
+            }
             EventMsg::ThreadRolledBack(rollback) => {
                 if from_replay {
                     self.app_event_tx.send(AppEvent::ApplyThreadRollback {
@@ -7055,6 +7089,10 @@ impl ChatWidget {
 
     pub(crate) fn thread_id(&self) -> Option<ThreadId> {
         self.thread_id
+    }
+
+    pub(crate) fn team_state(&self) -> &team_events::TeamState {
+        &self.team_state
     }
 
     pub(crate) fn thread_name(&self) -> Option<String> {

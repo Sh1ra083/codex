@@ -120,7 +120,10 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::CollabAgentInteractionEnd(_)
         | EventMsg::CollabWaitingEnd(_)
         | EventMsg::CollabCloseEnd(_)
-        | EventMsg::CollabResumeEnd(_) => Some(EventPersistenceMode::Extended),
+        | EventMsg::CollabResumeEnd(_)
+        | EventMsg::TeamTaskUpdated(_)
+        | EventMsg::TeamMessageSent(_)
+        | EventMsg::TeamCleanup(_) => Some(EventPersistenceMode::Extended),
         EventMsg::Warning(_)
         | EventMsg::ModelReroute(_)
         | EventMsg::AgentMessageDelta(_)
@@ -166,6 +169,10 @@ fn event_msg_persistence_mode(ev: &EventMsg) -> Option<EventPersistenceMode> {
         | EventMsg::CollabAgentInteractionBegin(_)
         | EventMsg::CollabWaitingBegin(_)
         | EventMsg::CollabCloseBegin(_)
-        | EventMsg::CollabResumeBegin(_) => None,
+        | EventMsg::CollabResumeBegin(_)
+        | EventMsg::TeamCreated(_)
+        | EventMsg::TeamMemberAdded(_)
+        | EventMsg::TeamMemberRemoved(_)
+        | EventMsg::TeamTaskCreated(_) => None,
     }
 }
